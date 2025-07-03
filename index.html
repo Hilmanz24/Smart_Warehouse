@@ -1,0 +1,58 @@
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login - PT Charoen Pokphand Indonesia</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    .fade-in {
+      animation: fadeIn 1s ease-in-out;
+    }
+    @keyframes fadeIn {
+      0% { opacity: 0; transform: translateY(-20px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-blue-100 via-blue-100 to-white-100 min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white p-8 rounded-xl shadow-lg max-w-md w-full fade-in">
+    <div class="text-center mb-6">
+      <img src="food-division.png" alt="PT Charoen Pokphand Indonesia" class="h-20 mx-auto mb-3">
+      <h1 class="text-2xl font-bold text-gray-700">Login Pengguna</h1>
+    </div>
+    <form onsubmit="return handleLogin(event)" class="space-y-4">
+      <div>
+        <label for="user" class="block text-sm font-medium">Username</label>
+        <input id="user" name="user" type="text" class="w-full p-2 border rounded-lg" placeholder="Masukkan username" required />
+      </div>
+      <div>
+        <label for="pass" class="block text-sm font-medium">Password</label>
+        <input id="pass" name="pass" type="password" class="w-full p-2 border rounded-lg" placeholder="Masukkan password" required />
+      </div>
+      <p id="error" class="text-sm text-red-600 hidden">User & password wajib diisi</p>
+      <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition">Masuk</button>
+    </form>
+  </div>
+
+  <script>
+    function handleLogin(event) {
+  event.preventDefault();
+  const user = document.getElementById("user").value;
+  const pass = document.getElementById("pass").value;
+  const error = document.getElementById("error");
+if (user === "admin" && pass === "admincpi") {
+    window.location.href = "dashboard.html";
+  } else {
+    error.textContent = "Username atau password salah.";
+    error.classList.remove("hidden");
+  }
+  if (user === "checker" && pass === "checker") {
+    window.location.href = "dashboard2.html";
+  } else {
+    error.textContent = "Username atau password salah.";
+    error.classList.remove("hidden");
+  }
+}
+  </script>
+</body>
+</html>

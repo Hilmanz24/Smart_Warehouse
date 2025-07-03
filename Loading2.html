@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tally Sheet Loading per Karung</title>
+
+  <!-- Tailwind CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+  <!-- SheetJS & jsPDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+  <style>
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 p-6">
+  <a href="dashboard.html" class="fixed top-8 right-8 bg-yellow-400 hover:bg-yellow-500 text-black font-medium px-4 py-2 rounded shadow">Kembali</a>
+
+  <div class="max-w-5xl mx-auto bg-white p-6 rounded-xl shadow-lg">
+    <h1 class="text-2xl font-bold text-blue-600 mb-6">Tally Sheet Loading per Karung</h1>
+
+    <!-- ================= META SESSION ================= -->
+     <div id="metaInputs" class="grid md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4">
+      <input id="tgl"   type="date"  placeholder="Tanggal"  class="p-2 border rounded" />
+      <input id="cust"  type="text"  placeholder="Customer" class="p-2 border rounded" />
+      <input id="item"  type="text"  placeholder="Item"     class="p-2 border rounded" />
+      <input id="ekspedisi" type="text"  placeholder="ekspedisi"    class="p-2 border rounded" />
+      <input id="checker"   type="text"  placeholder="checker" class="p-2 border rounded" />
+      <input id="platnomor"   type="platnomor"  placeholder="platnomor" class="p-2 border rounded" />
+    </div>
+    <button id="btnUnlock" class="hidden mb-4 bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">Edit Info Sesi</button>
+
+    <!-- ================= INPUT KARUNG ================= -->
+    <div class="flex items-center gap-4 mb-6">
+      <input type="number" id="inputGram" placeholder="Berat karung (gram)" class="w-full p-2 border rounded" />
+      <button id="btnAdd" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Tambah</button>
+    </div>
+
+    <!-- ================= TABEL KARUNG ================= -->
+    <div class="overflow-x-auto mb-4">
+      <table class="min-w-full text-sm border" id="tbl">
+        <thead>
+          <tr class="bg-blue-100 text-xs md:text-sm">
+            <th class="px-3 py-1 border">No</th>
+            <th class="px-3 py-1 border">Berat (g)</th>
+            <th class="px-3 py-1 border">Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- ================= REKAP ================= -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-sm font-medium">
+      <div>Total: <span id="tot">0</span> g</div>
+      <div>Rata-rata: <span id="avg">0</span> g</div>
+      <div>Min: <span id="min">0</span> g</div>
+      <div>Max: <span id="max">0</span> g</div>
+    </div>
+
+    <!-- ================= ACTION BUTTONS ================= -->
+    <div class="flex flex-wrap gap-4 mb-4">
+      <button id="btnExcel" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Export Excel</button>
+      <button id="btnPDF"   class="bg-red-500   text-white px-4 py-2 rounded hover:bg-red-600">Export PDF</button>
+      <button id="btnSave"  class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600">Simpan</button>
+      <a href="historyloading.html" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">Daftar Rekaman</a>
+      <button id="btnReset" class="ml-auto bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Reset Sesi</button>
+    </div>
+  </div>
+
+  <script>
+    const KEY_PREFIX = "tallyCustomer_";
+    let karung = [], editIdx = null, metaLocked = false, currentKey = null;
+
+    const $ = id => document.getElementById(id);
+    const metaEls = { tgl:$("tgl"), cust:$("cust"), item:$("item"), ekspedisi:$("ekspedisi"), checker:$("checker"), plat:$("platnomor") };
+    const inputGram = $("inputGram"), tbody = $("tbody"), btnAdd = $("btnAdd");
+
+    const getKey = () => currentKey || (KEY_PREFIX + metaEls.cust.value.trim() + "_" + metaEls.tgl.value);
+    const metaFilled = () => Object.values(metaEls).every(el => el.value.trim());
+    const lockMeta = lock => {
+      metaLocked = lock;
+      Object.values(metaEls).forEach(el => el.disabled = lock);
+      $("btnUnlock").classList.toggle("hidden", !lock);
+    };
+
+    window.addEventListener("DOMContentLoaded", () => {
+      const params = new URLSearchParams(window.location.search);
+      const keyParam = params.get("key") || sessionStorage.getItem("loadKey");
+      if (keyParam && localStorage.getItem(keyParam)) {
+        const saved = JSON.parse(localStorage.getItem(keyParam));
+        if (saved.meta) Object.entries(saved.meta).forEach(([k, v]) => { if (metaEls[k]) metaEls[k].value = v; });
+        if (Array.isArray(saved.data)) karung = saved.data;
+        currentKey = keyParam;
+        lockMeta(true);
+        render();
+      } else {
+        render();
+      }
+    });
+
+    function render() {
+      tbody.innerHTML = karung.map((v, i) => `
+        <tr>
+          <td class='px-3 py-1 border text-center'>${i + 1}</td>
+          <td class='px-3 py-1 border text-right'>${v}</td>
+          <td class='px-3 py-1 border text-center space-x-1'>
+            <button class='text-xs bg-yellow-400 px-2 rounded' onclick='editRow(${i})'>Edit</button>
+            <button class='text-xs bg-red-400 px-2 rounded' onclick='delRow(${i})'>Hapus</button>
+          </td>
+        </tr>`).join("");
+      const total = karung.reduce((a, b) => a + b, 0);
+      $("tot").textContent = total;
+      $("avg").textContent = karung.length ? (total / karung.length).toFixed(2) : 0;
+      $("min").textContent = karung.length ? Math.min(...karung) : 0;
+      $("max").textContent = karung.length ? Math.max(...karung) : 0;
+    }
+
+    function save() {
+      if (!metaFilled()) return;
+      const key = getKey();
+      localStorage.setItem(key, JSON.stringify({
+        meta: Object.fromEntries(Object.entries(metaEls).map(([k, e]) => [k, e.value])),
+        data: karung
+      }));
+      currentKey = key;
+    }
+
+    btnAdd.onclick = () => {
+      const val = parseInt(inputGram.value);
+      if (!metaFilled()) return alert("Lengkapi info sesi!");
+      if (isNaN(val) || val <= 0) return alert("Berat harus > 0");
+      editIdx === null ? karung.push(val) : karung[editIdx] = val;
+      inputGram.value = "";
+      inputGram.focus();
+      editIdx = null;
+      btnAdd.textContent = "Tambah";
+      lockMeta(true);
+      save();
+      render();
+    };
+
+    window.editRow = i => {
+      inputGram.value = karung[i];
+      editIdx = i;
+      btnAdd.textContent = "Update";
+    };
+
+    window.delRow = i => {
+      if (confirm("Hapus karung?")) {
+        karung.splice(i, 1);
+        save();
+        render();
+      }
+    };
+
+    $("btnUnlock").onclick = () => lockMeta(false);
+
+    $("btnReset").onclick = () => {
+      if (confirm("Reset sesi? (data tersimpan tidak akan dihapus)")) {
+        karung = [];
+        editIdx = null;
+        render();
+      }
+    };
+
+    $("btnSave").onclick = () => {
+      if (!metaFilled()) return alert("Lengkapi info sesi!");
+      if (!karung.length) return alert("Belum ada data karung.");
+      save();
+      lockMeta(true);
+      alert("Data disimpan.");
+    };
+
+    $("btnExcel").onclick = () => {
+      if (!karung.length) return alert("Tidak ada data.");
+      const rows = [["Tanggal", metaEls.tgl.value],["Customer", metaEls.cust.value],["Item", metaEls.item.value],["ekspedisi", metaEls.shift.value],["checker", metaEls.opr.value],["platnomor",metaEls.plat.value],[],["No","Berat (g)"]];
+      karung.forEach((v, i) => rows.push([i + 1, v]));
+      rows.push([], ["Total", $("tot").textContent], ["Rata-rata", $("avg").textContent], ["Min", $("min").textContent], ["Max", $("max").textContent]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), "Tally");
+      XLSX.writeFile(wb, `tally_${metaEls.cust.value}_${metaEls.tgl.value}.xlsx`);
+    };
+
+    $("btnPDF").onclick = () => {
+      if (!karung.length) return alert("Tidak ada data.");
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      doc.text("Tally Sheet Loading per Karung", 14, 16);
+      doc.setFontSize(10);
+      doc.text(`Tgl: ${metaEls.tgl.value}`, 14, 24);
+      doc.text(`Cust: ${metaEls.cust.value}`, 14, 30);
+      doc.text(`Item: ${metaEls.item.value}`, 14, 36);
+      doc.text(`ekspedisi: ${metaEls.ekspedisi.value}`, 14, 42);
+      doc.text(`checker : ${metaEls.checker.value}`, 14, 48);
+      doc.text(`platnomor : ${metaEls.platnomor.value}`, 14, 48);
+      const rows = karung.map((v, i) => [i + 1, `${v} g`]);
+      rows.push(["Total", $("tot").textContent + " g"],["Rata-rata", $("avg").textContent + " g"],["Min", $("min").textContent + " g"],["Max", $("max").textContent + " g"]);
+      doc.autoTable({ head: [["No","Berat (g)"]], body: rows, startY: 54 });
+      doc.save(`tally_${metaEls.cust.value}_${metaEls.tgl.value}.pdf`);
+    };
+  </script>
+</body>
+</html>

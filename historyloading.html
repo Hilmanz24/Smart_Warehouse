@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Daftar Tally Sheet Tersimpan</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
+</head>
+<body class="bg-gray-100 p-6 relative">
+  <!-- Tombol Kembali di pojok kanan atas -->
+  <a href="Loading.html" class="absolute top-4 right-4 bg-gray-300 hover:bg-gray-400 text-black font-medium px-4 py-2 rounded shadow">
+    Kembali
+  </a>
+
+  <div class="max-w-3xl mx-auto bg-white p-6 rounded-xl shadow-lg">
+    <h1 class="text-2xl font-bold text-blue-600 mb-4">Daftar Data Tally Sheet Tersimpan</h1>
+    <div id="listData" class="space-y-4"></div>
+  </div>
+
+  <script>
+    const listData = document.getElementById("listData");
+
+    function loadList() {
+      listData.innerHTML = "";
+      const keys = Object.keys(localStorage).filter(k => k.startsWith("tallyCustomer_"));
+
+      if (keys.length === 0) {
+        listData.innerHTML = "<p class='text-gray-500'>Belum ada data tersimpan.</p>";
+        return;
+      }
+
+      keys.forEach(key => {
+        const session = JSON.parse(localStorage.getItem(key));
+        const meta = session.meta || {};
+        const data = session.data || [];
+        const label = `📁 ${meta.tgl || "?"} - ${meta.cust || "?"} - ${meta.item || "?"} - ${meta.ekspedisi || "?"} - ${meta.checker || "?"} - ${meta.plat || "?"}`;
+
+        const div = document.createElement("div");
+        div.className = "p-3 border rounded";
+
+        const metaInfo = `
+          <div class="text-sm text-gray-700 mb-2">
+            <strong>Customer:</strong> ${meta.cust || "-"} |
+            <strong>Item:</strong> ${meta.item || "-"} |
+            <strong>Ekspedisi:</strong> ${meta.ekspedisi || "-"} |
+            <strong>Checker:</strong> ${meta.checker || "-"} |
+            <strong>Tanggal:</strong> ${meta.tgl || "-"} |
+            <strong>Plat Nomor:</strong> ${meta.plat || "-"}
+          </div>`;
+
+        const tableRows = data.map((val, i) => `
+          <tr>
+            <td class='border px-2'>${i + 1}</td>
+            <td class='border px-2 text-right'>
+              <input type='number' min='0' class='w-full text-right p-1 border' value='${val}' data-idx='${i}' data-key='${key}' />
+            </td>
+          </tr>`).join("");
+
+        const table = data.length ? `<table class='text-sm border w-full mb-2'>
+          <thead><tr><th class='border px-2'>No</th><th class='border px-2'>Berat (g)</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>` : "<p class='text-gray-500'>Tidak ada data karung.</p>";
+
+        div.innerHTML = `
+          <div class="mb-2 font-semibold">${label}</div>
+          ${metaInfo}
+          ${table}
+          <div class="mt-2 flex justify-end gap-2">
+            <a href="#" onclick="bukaData('${key}')" class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">Buka</a>
+            <button onclick="hapus('${key}')" class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600">Hapus</button>
+          </div>`;
+
+        listData.appendChild(div);
+      });
+    }
+
+    function simpanPerubahan(key) {
+      const container = [...document.querySelectorAll(`input[data-key='${key}']`)];
+      const newValues = container.map(input => parseInt(input.value)).filter(v => !isNaN(v) && v > 0);
+
+      if (newValues.length === 0) return alert("Semua nilai kosong atau tidak valid.");
+
+      const saved = JSON.parse(localStorage.getItem(key) || "{}");
+      saved.data = newValues;
+      localStorage.setItem(key, JSON.stringify(saved));
+      alert("Perubahan disimpan!");
+      loadList();
+    }
+
+    function hapus(key) {
+      if (confirm("Yakin ingin menghapus data ini?")) {
+        localStorage.removeItem(key);
+        loadList();
+      }
+    }
+
+    function bukaData(key) {
+      sessionStorage.setItem("loadKey", key);
+      window.location.href = "Loading.html";
+    }
+
+    loadList();
+  </script>
+</body>
+</html>

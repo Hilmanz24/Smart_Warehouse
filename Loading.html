@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tally Sheet Loading per Karung</title>
+
+  <!-- Tailwind CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+  <!-- SheetJS & jsPDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+  <style>
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 p-6">
+  <a href="dashboard.html" class="fixed top-8 right-8 bg-yellow-400 hover:bg-yellow-500 text-black font-medium px-4 py-2 rounded shadow">Kembali</a>
+
+  <div class="max-w-5xl mx-auto bg-white p-6 rounded-xl shadow-lg">
+    <h1 class="text-2xl font-bold text-blue-600 mb-6">Tally Sheet Loading per Karung</h1>
+
+    <!-- Input Metadata -->
+    <div class="grid md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4">
+      <input id="tgl" type="date" placeholder="Tanggal" class="p-2 border rounded" />
+      <input id="cust" type="text" placeholder="Customer" class="p-2 border rounded" />
+      <input id="item" type="text" placeholder="Item" class="p-2 border rounded" />
+      <input id="ekspedisi" type="text" placeholder="Ekspedisi" class="p-2 border rounded" />
+      <input id="checker" type="text" placeholder="Checker" class="p-2 border rounded" />
+      <input id="platnomor" type="text" placeholder="Plat Nomor" class="p-2 border rounded" />
+    </div>
+
+    <button id="btnUnlock" class="hidden mb-4 bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">Edit Info Sesi</button>
+
+    <!-- Input Berat Karung -->
+    <div class="flex items-center gap-4 mb-6">
+      <input type="number" id="inputGram" placeholder="Berat karung (gram)" class="w-full p-2 border rounded" />
+      <button id="btnAdd" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Tambah</button>
+    </div>
+
+    <!-- Tabel -->
+    <div class="overflow-x-auto mb-4">
+      <table class="min-w-full text-sm border" id="tbl">
+        <thead>
+          <tr class="bg-blue-100 text-xs md:text-sm">
+            <th class="px-3 py-1 border">No</th>
+            <th class="px-3 py-1 border">Berat (g)</th>
+            <th class="px-3 py-1 border">Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Rekap -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-sm font-medium">
+      <div>Total: <span id="tot">0</span> g</div>
+      <div>Rata-rata: <span id="avg">0</span> g</div>
+      <div>Min: <span id="min">0</span> g</div>
+      <div>Max: <span id="max">0</span> g</div>
+    </div>
+
+    <!-- Tombol Aksi -->
+    <div class="flex flex-wrap gap-4 mb-4">
+      <button id="btnExcel" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Export Excel</button>
+      <button id="btnPDF" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Export PDF</button>
+      <button id="btnSave" class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600">Simpan</button>
+      <a href="historyloading.html" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">Daftar Rekaman</a>
+      <button id="btnReset" class="ml-auto bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Reset Sesi</button>
+    </div>
+  </div>
+
+  <!-- Script -->
+  <script>
+    const $ = id => document.getElementById(id);
+    const metaEls = {
+      tgl: $("tgl"),
+      cust: $("cust"),
+      item: $("item"),
+      ekspedisi: $("ekspedisi"),
+      checker: $("checker"),
+      platnomor: $("platnomor")
+    };
+
+    const inputGram = $("inputGram"), tbody = $("tbody"), btnAdd = $("btnAdd");
+    let karung = [], editIdx = null, metaLocked = false, currentKey = null;
+    const KEY_PREFIX = "tallyCustomer_";
+
+    const getKey = () => currentKey || (KEY_PREFIX + metaEls.cust.value.trim() + "_" + metaEls.tgl.value);
+    const metaFilled = () => Object.values(metaEls).every(el => el.value.trim());
+    const lockMeta = lock => {
+      metaLocked = lock;
+      Object.values(metaEls).forEach(el => el.disabled = lock);
+      $("btnUnlock").classList.toggle("hidden", !lock);
+    };
+
+    window.addEventListener("DOMContentLoaded", () => {
+      const params = new URLSearchParams(window.location.search);
+      const keyParam = params.get("key") || sessionStorage.getItem("loadKey");
+      if (keyParam && localStorage.getItem(keyParam)) {
+        const saved = JSON.parse(localStorage.getItem(keyParam));
+        if (saved.meta) Object.entries(saved.meta).forEach(([k, v]) => { if (metaEls[k]) metaEls[k].value = v; });
+        if (Array.isArray(saved.data)) karung = saved.data;
+        currentKey = keyParam;
+        lockMeta(true);
+        render();
+      } else {
+        render();
+      }
+    });
+
+    function render() {
+  const cols = 3; // Kolom per baris: 30 karung = 1 kolom
+  const perCol = 30;
+  const colData = [];
+
+  for (let c = 0; c < Math.ceil(karung.length / perCol); c++) {
+    const chunk = karung.slice(c * perCol, (c + 1) * perCol);
+    colData.push(chunk);
+  }
+
+  let maxRows = Math.max(...colData.map(col => col.length));
+  let html = "";
+
+  for (let r = 0; r < maxRows; r++) {
+    html += "<tr>";
+    for (let c = 0; c < colData.length; c++) {
+      const val = colData[c][r];
+      const idx = r + c * perCol;
+      if (val != null) {
+        html += `<td class="border px-2 text-center">${idx + 1}</td>`;
+        html += `<td class="border px-2 text-right">${val}</td>`;
+      } else {
+        html += `<td class="border px-2"></td><td class="border px-2"></td>`;
+      }
+    }
+    html += "</tr>";
+  }
+
+  // Header dinamis
+  let head = "<tr>";
+  for (let i = 0; i < colData.length; i++) {
+    head += `<th class="border px-2">No</th><th class="border px-2">Berat (g)</th>`;
+  }
+  head += "</tr>";
+
+  $("tbody").innerHTML = head + html;
+
+  const total = karung.reduce((a, b) => a + b, 0);
+  $("tot").textContent = total;
+  $("avg").textContent = karung.length ? (total / karung.length).toFixed(2) : 0;
+  $("min").textContent = karung.length ? Math.min(...karung) : 0;
+  $("max").textContent = karung.length ? Math.max(...karung) : 0;
+}
+
+
+    function save() {
+      if (!metaFilled()) return;
+      const key = getKey();
+      localStorage.setItem(key, JSON.stringify({
+        meta: Object.fromEntries(Object.entries(metaEls).map(([k, e]) => [k, e.value])),
+        data: karung
+      }));
+      currentKey = key;
+    }
+
+    btnAdd.onclick = () => {
+      const val = parseInt(inputGram.value);
+      if (!metaFilled()) return alert("Lengkapi info sesi!");
+      if (isNaN(val) || val <= 0) return alert("Berat harus > 0");
+      editIdx === null ? karung.push(val) : karung[editIdx] = val;
+      inputGram.value = "";
+      inputGram.focus();
+      editIdx = null;
+      btnAdd.textContent = "Tambah";
+      lockMeta(true);
+      save();
+      render();
+    };
+
+    window.editRow = i => {
+      inputGram.value = karung[i];
+      editIdx = i;
+      btnAdd.textContent = "Update";
+    };
+
+    window.delRow = i => {
+      if (confirm("Hapus karung?")) {
+        karung.splice(i, 1);
+        save();
+        render();
+      }
+    };
+
+    $("btnUnlock").onclick = () => lockMeta(false);
+
+    $("btnReset").onclick = () => {
+      if (confirm("Reset sesi? (data tersimpan tidak akan dihapus)")) {
+        karung = [];
+        editIdx = null;
+        render();
+      }
+    };
+
+    $("btnSave").onclick = () => {
+      if (!metaFilled()) return alert("Lengkapi info sesi!");
+      if (!karung.length) return alert("Belum ada data karung.");
+      save();
+      lockMeta(true);
+      alert("Data disimpan.");
+    };
+
+$("btnExcel").onclick = () => {
+  if (!karung.length) return alert("Tidak ada data.");
+
+  // === Baris Header Metadata ===
+  const rows = [
+    ["Tally Sheet Warehouse CPI Sragen"], // ✅ JUDUL
+    [], // spasi kosong
+    ["Tanggal", metaEls.tgl.value],
+    ["Customer", metaEls.cust.value],
+    ["Item", metaEls.item.value],
+    ["Ekspedisi", metaEls.ekspedisi.value],
+    ["Checker", metaEls.checker.value],
+    ["Plat Nomor", metaEls.platnomor.value],
+    [],
+  ];
+
+  // === Konversi karung jadi multi kolom (30 per kolom) ===
+  const perCol = 30;
+  const totalCols = Math.ceil(karung.length / perCol);
+  const maxRows = perCol;
+
+  // Header dinamis
+  const headerRow = [];
+  for (let i = 0; i < totalCols; i++) {
+    headerRow.push("No", "Berat (g)");
+  }
+  rows.push(headerRow);
+
+  // Data karung per baris
+  for (let r = 0; r < maxRows; r++) {
+    const row = [];
+    for (let c = 0; c < totalCols; c++) {
+      const idx = r + c * perCol;
+      if (karung[idx] !== undefined) {
+        row.push(idx + 1, karung[idx]);
+      } else {
+        row.push("", "");
+      }
+    }
+    rows.push(row);
+  }
+
+  // Rekap di bagian bawah
+  rows.push([]);
+  rows.push(["Total", $("tot").textContent]);
+  rows.push(["Rata-rata", $("avg").textContent]);
+  rows.push(["Min", $("min").textContent]);
+  rows.push(["Max", $("max").textContent]);
+
+  // === Proses Export ===
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, "Tally");
+
+  const filename = `tally_${metaEls.cust.value}_${metaEls.tgl.value}.xlsx`;
+  XLSX.writeFile(wb, filename);
+};
+
+   $("btnPDF").onclick = () => {
+  if (!karung.length) return alert("Tidak ada data.");
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "landscape" });
+
+  /* ---------- HEADER ---------- */
+  doc.setFontSize(14);
+  doc.text("Tally Sheet Loading per Karung", 14, 16);
+
+  doc.setFontSize(10);
+  doc.text(`Tgl        : ${metaEls.tgl.value}`,        14, 26);
+  doc.text(`Customer   : ${metaEls.cust.value}`,      14, 32);
+  doc.text(`Item       : ${metaEls.item.value}`,      14, 38);
+  doc.text(`Ekspedisi  : ${metaEls.ekspedisi.value}`, 14, 44);
+  doc.text(`Checker    : ${metaEls.checker.value}`,   14, 50);
+  doc.text(`Plat Nomor : ${metaEls.platnomor.value}`, 14, 56);
+
+  /* ---------- TABEL KARUNG ---------- */
+  const perCol = 30;
+  const colCount = Math.ceil(karung.length / perCol);
+
+  // Judul kolom per rentang 30 karung
+  const headerRow = [];
+  for (let c = 0; c < colCount; c++) {
+    const start = c * perCol + 1;
+    const end   = Math.min((c + 1) * perCol, karung.length);
+    headerRow.push(`${start}‑${end}`);
+  }
+
+  // Isi tabel: "nomor   berat g" (satu baris)
+  const bodyRows = [];
+  for (let r = 0; r < perCol; r++) {
+    const row = [];
+    for (let c = 0; c < colCount; c++) {
+      const idx = c * perCol + r;
+      row.push(
+        idx < karung.length
+          ? `${idx + 1}   ${karung[idx]} g`   // nomor kiri, berat kanan
+          : ""
+      );
+    }
+    bodyRows.push(row);
+  }
+
+  doc.autoTable({
+    head: [headerRow],
+    body: bodyRows,
+    startY: 64,
+    styles: {
+      halign: "left",          // teks rata kiri agar nomor benar‑benar di kiri
+      valign: "middle",
+      cellWidth: "wrap",
+      fontSize: 9,
+    },
+  });
+
+  /* ---------- RANGKUMAN ---------- */
+  const summaryStartY = doc.lastAutoTable.finalY + 6;
+  doc.autoTable({
+    head: [["Keterangan", "Nilai"]],
+    body: [
+      [`Total`,      $("tot").textContent + " g"],
+      [`Rata‑rata`,  $("avg").textContent + " g"],
+      [`Minimum`,    $("min").textContent + " g"],
+      [`Maksimum`,   $("max").textContent + " g"],
+    ],
+    startY: summaryStartY,
+    headStyles: { fillColor: [220, 220, 220] },
+    styles: { fontSize: 9 },
+  });
+
+  /* ---------- SIMPAN ---------- */
+  doc.save(`tally_${metaEls.cust.value}_${metaEls.tgl.value}.pdf`);
+};
+  </script>
+</body>
+</html>
